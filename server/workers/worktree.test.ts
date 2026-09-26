@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  canonicalPath,
   createWorkerWorktree,
   ensureGitRepository,
   execGit,
@@ -38,7 +39,7 @@ describe("Git worktree manager", () => {
 
   it("ensures a directory is a valid git repository", async () => {
     const { repoRoot } = await ensureGitRepository(repoDir);
-    expect(repoRoot.toLowerCase()).toBe(path.resolve(repoDir).toLowerCase());
+    expect(repoRoot.toLowerCase()).toBe(canonicalPath(repoDir).toLowerCase());
   });
 
   it("explicitly rejects non-git repositories with clear error", async () => {
@@ -76,13 +77,13 @@ describe("Git worktree manager", () => {
       branch: "omo/worker-alpha",
     });
 
-    expect(result.path.toLowerCase()).toBe(path.resolve(targetPath).toLowerCase());
+    expect(result.path.toLowerCase()).toBe(canonicalPath(targetPath).toLowerCase());
     expect(result.branch).toBe("omo/worker-alpha");
     expect(fs.existsSync(targetPath)).toBe(true);
 
     const worktrees = await listWorktrees(repoDir);
     const found = worktrees.find(
-      (wt) => path.resolve(wt.path).toLowerCase() === path.resolve(targetPath).toLowerCase(),
+      (wt) => wt.path.toLowerCase() === canonicalPath(targetPath).toLowerCase(),
     );
     expect(found).toBeDefined();
     expect(found?.branch).toBe("omo/worker-alpha");

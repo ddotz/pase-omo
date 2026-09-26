@@ -46,6 +46,28 @@ export async function execGit(
   }
 }
 
+/**
+ * The path git itself reports. git prints worktrees through their real path, so
+ * on macOS a checkout under `/var` or `/tmp` comes back as `/private/...` and a
+ * plain `path.resolve` comparison misses it. The target may not exist yet, so
+ * the nearest existing ancestor is resolved and the rest is appended.
+ */
+export function canonicalPath(target: string): string {
+  const resolved = path.resolve(target);
+  const rest: string[] = [];
+  let current = resolved;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(current), ...rest);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return resolved;
+      rest.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
 export async function ensureGitRepository(targetDir: string): Promise<{ repoRoot: string }> {
   const resolved = path.resolve(targetDir);
   if (!fs.existsSync(resolved)) {
@@ -54,7 +76,7 @@ export async function ensureGitRepository(targetDir: string): Promise<{ repoRoot
 
   try {
     const { stdout } = await execGit(["rev-parse", "--show-toplevel"], resolved);
-    const repoRoot = path.resolve(stdout);
+    const repoRoot = canonicalPath(stdout);
     return { repoRoot };
   } catch (error) {
     if (!(error instanceof WorkerError)) throw error;
@@ -95,7 +117,7 @@ export async function listWorktrees(repoRoot: string): Promise<GitWorktreeEntry[
 
     for (const line of lines) {
       if (line.startsWith("worktree ")) {
-        currentPath = path.resolve(line.slice("worktree ".length).trim());
+        currentPath = canonicalPath(line.slice("worktree ".length).trim());
       } else if (line.startsWith("HEAD ")) {
         head = line.slice("HEAD ".length).trim();
       } else if (line.startsWith("branch ")) {
@@ -128,14 +150,14 @@ export async function createWorkerWorktree(
   options: CreateWorktreeOptions,
 ): Promise<{ path: string; branch: string }> {
   const { repoRoot } = await ensureGitRepository(options.repoRoot);
-  const targetPath = path.resolve(options.targetPath);
+  const targetPath = canonicalPath(options.targetPath);
   const branch = sanitizeBranchName(options.branch);
   const baseRef = options.baseRef || "HEAD";
 
   // Check if worktree directory already exists in git worktree list
   const existingWorktrees = await listWorktrees(repoRoot);
   const matched = existingWorktrees.find(
-    (wt) => path.resolve(wt.path).toLowerCase() === targetPath.toLowerCase(),
+    (wt) => wt.path.toLowerCase() === targetPath.toLowerCase(),
   );
 
   if (matched) {
